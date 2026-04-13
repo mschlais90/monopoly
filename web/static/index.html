@@ -1,0 +1,124 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Monopoly Simulator</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<!-- ── Setup Screen ──────────────────────────────────────────────── -->
+<div id="setup-screen" class="screen active">
+  <h1>MONOPOLY<br><span class="sub">SIMULATOR</span></h1>
+  <div class="setup-card">
+    <label>Number of Players</label>
+    <div class="radio-row" id="player-count-row">
+      <button class="radio-btn selected" data-val="2">2</button>
+      <button class="radio-btn" data-val="3">3</button>
+      <button class="radio-btn" data-val="4">4</button>
+    </div>
+
+    <div id="player-rows"></div>
+
+    <label>Starting Money</label>
+    <input type="number" id="starting-money" value="1500" min="500" max="10000" step="100">
+
+    <div class="btn-row">
+      <button id="btn-start" class="btn btn-red">START GAME</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Game Screen ───────────────────────────────────────────────── -->
+<div id="game-screen" class="screen">
+  <div class="top-bar">
+    <span id="turn-label">Turn: 0</span>
+    <span id="current-player-label"></span>
+    <div class="top-btns">
+      <button id="btn-settings" class="btn btn-sm btn-purple">Settings</button>
+      <button id="btn-menu" class="btn btn-sm btn-grey">Menu</button>
+    </div>
+  </div>
+
+  <div class="game-layout">
+    <!-- Left: Board + Unowned -->
+    <div class="left-col">
+      <canvas id="board-canvas" width="640" height="640"></canvas>
+      <div id="unowned-panel" class="panel">
+        <div class="panel-hdr">Unowned Properties <span id="unowned-count"></span></div>
+        <div id="unowned-list" class="scroll-list"></div>
+      </div>
+    </div>
+
+    <!-- Right: Players + Log -->
+    <div class="right-col">
+      <div id="player-panels"></div>
+      <div id="action-log" class="panel">
+        <div class="panel-hdr">Action Log</div>
+        <div id="log-content" class="scroll-list log-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls bar -->
+  <div class="controls-bar">
+    <button id="btn-next" class="btn btn-green">Next Turn</button>
+    <button id="btn-auto" class="btn btn-blue">Auto Run</button>
+    <label class="speed-label">Speed</label>
+    <input type="range" id="speed-slider" min="1" max="5" value="3">
+    <button id="btn-props" class="btn btn-purple">Properties</button>
+    <button id="btn-save" class="btn btn-save">Save</button>
+    <button id="btn-load-file" class="btn btn-load">Load</button>
+    <button id="btn-new" class="btn btn-grey">New Game</button>
+  </div>
+</div>
+
+<!-- ── Modals ─────────────────────────────────────────────────────── -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div id="modal" class="modal">
+    <div id="modal-title" class="modal-title"></div>
+    <div id="modal-body" class="modal-body"></div>
+    <div id="modal-btns" class="modal-btns"></div>
+  </div>
+</div>
+
+<!-- ── Properties Modal ──────────────────────────────────────────── -->
+<div id="props-overlay" class="modal-overlay hidden">
+  <div class="modal modal-wide">
+    <div class="modal-title">Property Management</div>
+    <div id="props-tabs" class="tabs"></div>
+    <div id="props-body" class="modal-body scroll-list"></div>
+    <div class="modal-btns">
+      <button class="btn btn-grey" onclick="closePropsModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Settings Modal ────────────────────────────────────────────── -->
+<div id="settings-overlay" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-title">Settings</div>
+    <div class="modal-body">
+      <label class="checkbox-row">
+        <input type="checkbox" id="setting-dice" checked>
+        Show dice on board
+      </label>
+      <label class="checkbox-row">
+        <input type="checkbox" id="setting-animate" checked>
+        Animate token movement
+      </label>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-green" onclick="closeSettings()">Save</button>
+      <button class="btn btn-grey" onclick="document.getElementById('settings-overlay').classList.add('hidden')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<input type="file" id="load-file-input" accept=".json" style="display:none">
+
+<script src="/static/js/board.js"></script>
+<script src="/static/js/app.js"></script>
+</body>
+</html>
