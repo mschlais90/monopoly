@@ -56,6 +56,26 @@
       <div id="player-panels"></div>
       <div id="action-log" class="panel">
         <div class="panel-hdr">Action Log</div>
+        <div class="log-filters">
+          <label class="filter-label">Player:</label>
+          <select id="log-player-filter" class="filter-select">
+            <option value="All">All</option>
+          </select>
+          <label class="filter-label">Type:</label>
+          <select id="log-type-filter" class="filter-select">
+            <option value="All">All</option>
+            <option value="Turn Header">Turn Header</option>
+            <option value="Movement">Movement</option>
+            <option value="Purchase">Purchase</option>
+            <option value="Rent">Rent</option>
+            <option value="Cards">Cards</option>
+            <option value="Jail">Jail</option>
+            <option value="Building">Building</option>
+            <option value="Bankruptcy">Bankruptcy</option>
+            <option value="Other">Other</option>
+          </select>
+          <button id="log-clear-btn" class="btn btn-sm btn-grey">Clear</button>
+        </div>
         <div id="log-content" class="scroll-list log-list"></div>
       </div>
     </div>
@@ -68,6 +88,8 @@
     <label class="speed-label">Speed</label>
     <input type="range" id="speed-slider" min="1" max="5" value="3">
     <button id="btn-props" class="btn btn-purple">Properties</button>
+    <button id="btn-trade" class="btn btn-purple">Trade</button>
+    <div style="flex: 1"></div>
     <button id="btn-save" class="btn btn-save">Save</button>
     <button id="btn-load-file" class="btn btn-load">Load</button>
     <button id="btn-new" class="btn btn-grey">New Game</button>
@@ -95,6 +117,44 @@
   </div>
 </div>
 
+
+<!-- ── Trade Modal ───────────────────────────────────────────────── -->
+<div id="trade-overlay" class="modal-overlay hidden">
+  <div class="modal modal-wide">
+    <div class="modal-title">Propose Trade</div>
+    <div class="modal-body">
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+        <div>
+          <label style="font-weight: bold; color: #FFD700;">You Offer:</label>
+          <div style="margin-top: 8px;">
+            <label style="font-size: 11px;">Cash: $</label>
+            <input type="number" id="trade-offer-cash" value="0" min="0" style="width: 100px; padding: 4px;">
+          </div>
+          <div id="trade-offer-props" class="trade-prop-list"></div>
+        </div>
+        <div>
+          <label style="font-weight: bold; color: #FFD700;">You Request:</label>
+          <div style="margin-top: 8px;">
+            <label style="font-size: 11px;">Cash: $</label>
+            <input type="number" id="trade-request-cash" value="0" min="0" style="width: 100px; padding: 4px;">
+          </div>
+          <div id="trade-request-props" class="trade-prop-list"></div>
+        </div>
+      </div>
+      <div style="margin-top: 16px;">
+        <label style="font-weight: bold; color: #FFD700;">Trade With:</label>
+        <select id="trade-recipient" style="width: 100%; padding: 6px; margin-top: 4px; background: #0f3460; color: #e0e0e0; border: 1px solid #333; border-radius: 4px;">
+          <option value="">Select player...</option>
+        </select>
+      </div>
+      <div id="trade-fairness" style="margin-top: 12px; text-align: center; font-size: 12px; color: #aaa;"></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-green" onclick="proposeTrade()">Propose</button>
+      <button class="btn btn-grey" onclick="closeTradeModal()">Cancel</button>
+    </div>
+  </div>
+</div>
 <!-- ── Settings Modal ────────────────────────────────────────────── -->
 <div id="settings-overlay" class="modal-overlay hidden">
   <div class="modal">
@@ -122,3 +182,6 @@
 <script src="/static/js/app.js"></script>
 </body>
 </html>
+
+
+

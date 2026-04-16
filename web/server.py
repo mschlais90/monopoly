@@ -202,6 +202,20 @@ def next_turn():
             "pos": prop.pos,
             "cash": player.money,
         }
+    elif engine.pending_human_trades:
+        from game.trade import trade_balance
+        proposal = engine.pending_human_trades[0]
+        recipient_net, proposer_net = trade_balance(proposal, engine)
+        pending = {
+            "type": "trade",
+            "proposer": proposal.proposer.name,
+            "recipient": proposal.recipient.name,
+            "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
+            "offered_cash": proposal.offered_cash,
+            "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
+            "requested_cash": proposal.requested_cash,
+            "recipient_net": recipient_net,
+        }
 
     return jsonify({
         "state": _full_state(engine),
@@ -232,6 +246,15 @@ def decide():
                 extra_log.append(f"  {player.name} bought {prop.name} for ${prop.price}.")
             else:
                 extra_log.append(f"  {player.name} passed on {prop.name}.")
+    elif dtype == "trade":
+        if engine.pending_human_trades:
+            proposal = engine.pending_human_trades.pop(0)
+            if choice:
+                engine.execute_trade(proposal)
+                extra_log.append(f"  [TRADE ACCEPTED] {proposal.recipient.name} accepted the trade from {proposal.proposer.name}.")
+            else:
+                extra_log.append(f"  [TRADE DECLINED] {proposal.recipient.name} declined {proposal.proposer.name}'s offer.")
+                engine._declined_trades[engine._trade_key(proposal)] = engine.turn_number
 
     engine.pending_human_buys = []
     engine.pending_human_trades = []
@@ -243,6 +266,63 @@ def decide():
     })
 
 
+
+@app.route("/api/propose_trade", methods=["POST"])
+def propose_trade():
+    body = request.json
+    sid = body.get("session_id")
+    sess = sessions.get(sid)
+    if not sess:
+        return jsonify({"error": "Invalid session"}), 404
+    engine = sess["engine"]
+    
+    from game.trade import TradeProposal
+    
+    proposer_name = body.get("proposer_name")
+    recipient_name = body.get("recipient_name")
+    offered_positions = body.get("offered_prop_positions", [])
+    offered_cash = body.get("offered_cash", 0)
+    requested_positions = body.get("requested_prop_positions", [])
+    requested_cash = body.get("requested_cash", 0)
+    
+    proposer = next((p for p in engine.players if p.name == proposer_name), None)
+    recipient = next((p for p in engine.players if p.name == recipient_name), None)
+    
+    if not proposer or not recipient:
+        return jsonify({"error": "Invalid players"}), 400
+    
+    offered_props = [engine.board[pos] for pos in offered_positions if pos in range(40) and engine.board[pos].owner == proposer.name]
+    requested_props = [engine.board[pos] for pos in requested_positions if pos in range(40) and engine.board[pos].owner == recipient.name]
+    
+    proposal = TradeProposal(proposer, recipient, offered_props, offered_cash, requested_props, requested_cash)
+    
+    # Check cooldown
+    key = engine._trade_key(proposal)
+    if key in engine._declined_trades:
+        last_declined = engine._declined_trades[key]
+        if engine.turn_number - last_declined < 10:
+            return jsonify({
+                "error": f"Trade on cooldown ({10 - (engine.turn_number - last_declined)} turns remaining)",
+                "state": _full_state(engine),
+                "log": []
+            })
+    
+    # Recipient evaluates
+    accepted = recipient.strategy.evaluate_trade(recipient, proposal, engine)
+    extra_log = []
+    
+    if accepted:
+        engine.execute_trade(proposal)
+        extra_log.append(f"  [TRADE ACCEPTED] {recipient.name} accepted {proposer.name}'s trade offer!")
+    else:
+        extra_log.append(f"  [TRADE DECLINED] {recipient.name} declined {proposer.name}'s trade offer.")
+        engine._declined_trades[key] = engine.turn_number
+    
+    return jsonify({
+        "state": _full_state(engine),
+        "log": extra_log,
+        "pending": None,
+    })
 @app.route("/api/mortgage", methods=["POST"])
 def mortgage_property():
     body = request.json
@@ -421,5 +501,8 @@ if __name__ == "__main__":
     if port == 5000:
         print("Open http://127.0.0.1:5000 in your browser")
     app.run(host="0.0.0.0", port=port, debug=debug)
+
+
+
 
 

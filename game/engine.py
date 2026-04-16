@@ -307,8 +307,9 @@ class GameEngine:
 
     def _offer_purchase(self, player, prop):
         self._log(f"  {prop.name} is unowned (${prop.price}). {player.name} has ${player.money}.")
-        from strategies.human import HumanStrategy
-        if self.defer_human_prompts and isinstance(player.strategy, HumanStrategy):
+        # Check if this is a human/interactive strategy that needs deferral
+        is_human = "Human" in type(player.strategy).__name__
+        if self.defer_human_prompts and is_human:
             if player.money >= prop.price:
                 self.pending_human_buys.append((player, prop))
                 self._log(f"  [Buy decision pending for {player.name}...]")
@@ -530,8 +531,8 @@ class GameEngine:
             return
 
         # Defer to UI if animation is pending and recipient is human
-        from strategies.human import HumanStrategy
-        if self.defer_human_prompts and isinstance(recipient.strategy, HumanStrategy):
+        is_human = "Human" in type(recipient.strategy).__name__
+        if self.defer_human_prompts and is_human:
             self.pending_human_trades.append(proposal)
             self._log(f"  [Trade decision pending for {recipient.name}...]")
             return

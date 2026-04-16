@@ -12,6 +12,17 @@ const settings = { showDice: true, animate: true };
 const SPEED_DELAYS = { 1: 2000, 2: 1000, 3: 500, 4: 200, 5: 50 };
 const PLAYER_COLORS = ["#E74C3C", "#3498DB", "#2ECC71", "#F39C12"];
 
+function setupCanvas(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = 640 * dpr;
+    canvas.height = 640 * dpr;
+    canvas.style.width = "640px";
+    canvas.style.height = "640px";
+    const ctx = canvas.getContext("2d");
+    ctx.scale(dpr, dpr);
+    return ctx;
+}
+
 // ── API helpers ──────────────────────────────────────────────────────────────
 
 async function api(path, body) {
@@ -42,6 +53,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("btn-next").addEventListener("click", nextTurn);
     document.getElementById("btn-auto").addEventListener("click", toggleAuto);
     document.getElementById("btn-props").addEventListener("click", openPropsModal);
+    document.getElementById("btn-trade").addEventListener("click", openTradeModal);
     document.getElementById("btn-save").addEventListener("click", saveGame);
     document.getElementById("btn-load-file").addEventListener("click", () => document.getElementById("load-file-input").click());
     document.getElementById("load-file-input").addEventListener("change", loadGame);
@@ -52,6 +64,11 @@ document.addEventListener("DOMContentLoaded", async () => {
         document.getElementById("setting-animate").checked = settings.animate;
         document.getElementById("settings-overlay").classList.remove("hidden");
     });
+    
+    // Log filter event listeners
+    document.getElementById("log-player-filter").addEventListener("change", renderLog);
+    document.getElementById("log-type-filter").addEventListener("change", renderLog);
+    document.getElementById("log-clear-btn").addEventListener("click", clearLog);
 });
 
 function buildSetupRows(count) {
@@ -164,6 +181,27 @@ async function handlePending(pending) {
         const resp = await api("/decide", { session_id: sessionId, type: "buy", choice });
         if (resp.log) appendLog(resp.log);
         gameState = resp.state;
+    } else if (pending.type === "trade") {
+        const offeredProps = pending.offered_props.map(p => p.name).join(", ") || "nothing";
+        const requestedProps = pending.requested_props.map(p => p.name).join(", ") || "nothing";
+        const netInfo = pending.recipient_net > 0 
+            ? `<p style="color:#4CAF50">Fair value: +$${Math.round(pending.recipient_net)} in your favor</p>`
+            : pending.recipient_net < 0
+            ? `<p style="color:#FF7043">Fair value: -$${Math.round(-pending.recipient_net)} against you</p>`
+            : `<p style="color:#FFD700">Fair value: Even trade</p>`;
+        
+        const choice = await showModal(
+            "Trade Offer",
+            `<p><b>${pending.proposer}</b> offers you a trade:</p>
+             <p><b>They offer:</b> ${offeredProps}${pending.offered_cash > 0 ? ` + $${pending.offered_cash}` : ""}</p>
+             <p><b>You give:</b> ${requestedProps}${pending.requested_cash > 0 ? ` + $${pending.requested_cash}` : ""}</p>
+             ${netInfo}`,
+            [{ text: "Accept", value: true, cls: "btn-green" },
+             { text: "Decline", value: false, cls: "btn-grey" }]
+        );
+        const resp = await api("/decide", { session_id: sessionId, type: "trade", choice });
+        if (resp.log) appendLog(resp.log);
+        gameState = resp.state;
     }
 }
 
@@ -211,15 +249,13 @@ function animateMovement(prePosMap, callback) {
                 callback().then(resolve);
                 return;
             }
+            const canvas = document.getElementById("board-canvas");
+            const ctx = setupCanvas(canvas);
             const overrides = {};
             overrides[moved.name] = path[step];
-            drawBoard(
-                document.getElementById("board-canvas").getContext("2d"),
-                boardSpaces, gameState.board, gameState.players,
-                gameState.free_parking_pot,
-                settings.showDice ? lastDice : null,
-                overrides
-            );
+            drawBoard(ctx, boardSpaces, gameState.board, gameState.players,
+                      gameState.free_parking_pot,
+                      settings.showDice ? lastDice : null, overrides);
             step++;
             setTimeout(tick, delays[step - 1]);
         }
@@ -313,6 +349,7 @@ function refreshUI() {
     refreshBoard();
     refreshPlayers();
     refreshUnowned();
+    updatePlayerFilter();
     document.getElementById("turn-label").textContent = "Turn: " + gameState.turn;
     const cp = gameState.players.find(p => p.name === gameState.current_player);
     const lbl = document.getElementById("current-player-label");
@@ -327,7 +364,7 @@ function refreshUI() {
 
 function refreshBoard() {
     const canvas = document.getElementById("board-canvas");
-    const ctx = canvas.getContext("2d");
+    const ctx = setupCanvas(canvas);
     drawBoard(ctx, boardSpaces, gameState.board, gameState.players,
               gameState.free_parking_pot, settings.showDice ? lastDice : null, null);
 }
@@ -341,12 +378,33 @@ function refreshPlayers() {
         div.style.borderLeftColor = p.color;
         let propsHtml = "";
         if (p.properties.length) {
-            propsHtml = p.properties.map(pr => {
-                const c = pr.color ? COLOR_HEX[pr.color] || "#888" : "#aaa";
-                const h = pr.houses === 5 ? " H" : pr.houses > 0 ? " " + pr.houses + "h" : "";
-                const mg = pr.mortgaged ? " [M]" : "";
-                return `<span style="color:${c}">${pr.name}${h}${mg}</span>`;
-            }).join("");
+            // Group properties by color
+            const grouped = {};
+            for (const pr of p.properties) {
+                const colorKey = pr.color || "other";
+                if (!grouped[colorKey]) grouped[colorKey] = [];
+                grouped[colorKey].push(pr);
+            }
+            
+            // Sort color groups by first property position
+            const sortedColors = Object.keys(grouped).sort((a, b) => {
+                const aMin = Math.min(...grouped[a].map(pr => pr.pos));
+                const bMin = Math.min(...grouped[b].map(pr => pr.pos));
+                return aMin - bMin;
+            });
+            
+            const parts = [];
+            for (const colorKey of sortedColors) {
+                const props = grouped[colorKey];
+                const c = colorKey !== "other" ? COLOR_HEX[colorKey] || "#888" : "#aaa";
+                const propStrs = props.map(pr => {
+                    const h = pr.houses === 5 ? " H" : pr.houses > 0 ? " " + pr.houses + "h" : "";
+                    const mg = pr.mortgaged ? " [M]" : "";
+                    return `${pr.name}${h}${mg}`;
+                });
+                parts.push(`<span style="color:${c}">■ ${propStrs.join(", ")}</span>`);
+            }
+            propsHtml = parts.join("<br>");
         }
         div.innerHTML = `
             <div class="pp-name" style="color:${p.color}">${p.name} ${p.bankrupt ? "(BANKRUPT)" : ""}</div>
@@ -374,25 +432,91 @@ function refreshUnowned() {
     countEl.textContent = `(${count})`;
 }
 
-// ── Log ──────────────────────────────────────────────────────────────────────
+// ── Log with filtering ───────────────────────────────────────────────────────
+
+let logMessages = [];
+let currentTurnPlayer = null;
+
+function classifyLogType(msg) {
+    const m = msg.toLowerCase();
+    if (msg.startsWith("===")) return "Turn Header";
+    if (m.includes("rolled") || m.includes("moves to") || m.includes("passed go") || m.includes("escaped jail")) return "Movement";
+    if (m.includes("bought") || m.includes("passed on") || m.includes("unowned") || m.includes("buy")) return "Purchase";
+    if (m.includes("rent") || m.includes("owes")) return "Rent";
+    if (m.includes("chance") || m.includes("comm. chest") || m.includes("collected") || m.includes("advanced to")) return "Cards";
+    if (m.includes("jail")) return "Jail";
+    if (m.includes("built") || m.includes("house") || m.includes("hotel") || m.includes("mortgag")) return "Building";
+    if (m.includes("bankrupt")) return "Bankruptcy";
+    return "Other";
+}
+
+function pickLogClass(msg) {
+    const m = msg.toLowerCase();
+    if (msg.startsWith("===")) return "log-turn";
+    if (m.includes("bought")) return "log-buy";
+    if (m.includes("rent") || m.includes("owes")) return "log-rent";
+    if (m.includes("jail")) return "log-jail";
+    if (m.includes("chance") || m.includes("chest")) return "log-card";
+    if (m.includes("built") || m.includes("house") || m.includes("hotel")) return "log-build";
+    if (m.includes("trade")) return "log-trade";
+    if (m.includes("bankrupt")) return "log-bankrupt";
+    return "";
+}
+
+function extractTurnPlayer(msg) {
+    const match = msg.match(/^=== Turn \d+: (.+?) \(/);
+    if (match) currentTurnPlayer = match[1];
+}
 
 function appendLog(lines) {
     if (!lines || !lines.length) return;
-    const el = document.getElementById("log-content");
     for (const line of lines) {
+        extractTurnPlayer(line);
+        const player = currentTurnPlayer || "System";
+        const type = classifyLogType(line);
+        logMessages.push({text: line, player, type});
+    }
+    renderLog();
+}
+
+function renderLog() {
+    const el = document.getElementById("log-content");
+    const playerFilter = document.getElementById("log-player-filter").value;
+    const typeFilter = document.getElementById("log-type-filter").value;
+    
+    el.innerHTML = "";
+    for (const msg of logMessages) {
+        if (playerFilter !== "All" && msg.player !== playerFilter) continue;
+        if (typeFilter !== "All" && msg.type !== typeFilter) continue;
+        
         const div = document.createElement("div");
-        div.textContent = line;
-        if (line.startsWith("===")) div.className = "log-turn";
-        else if (line.includes("bought")) div.className = "log-buy";
-        else if (line.includes("rent") || line.includes("owes")) div.className = "log-rent";
-        else if (line.includes("jail") || line.includes("Jail")) div.className = "log-jail";
-        else if (line.includes("CHANCE") || line.includes("COMM.")) div.className = "log-card";
-        else if (line.includes("built") || line.includes("house") || line.includes("hotel")) div.className = "log-build";
-        else if (line.includes("TRADE")) div.className = "log-trade";
-        else if (line.includes("BANKRUPT")) div.className = "log-bankrupt";
+        div.textContent = msg.text;
+        div.className = pickLogClass(msg.text);
         el.appendChild(div);
     }
     el.scrollTop = el.scrollHeight;
+}
+
+function clearLog() {
+    logMessages = [];
+    currentTurnPlayer = null;
+    renderLog();
+}
+
+function updatePlayerFilter() {
+    if (!gameState) return;
+    const select = document.getElementById("log-player-filter");
+    const current = select.value;
+    select.innerHTML = '<option value="All">All</option>';
+    for (const p of gameState.players) {
+        const opt = document.createElement("option");
+        opt.value = p.name;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+    }
+    if (current && Array.from(select.options).some(o => o.value === current)) {
+        select.value = current;
+    }
 }
 
 // ── Modal helper ─────────────────────────────────────────────────────────────
@@ -448,6 +572,15 @@ function buildPropsTabs() {
     buildPropsBody(activePlayers[propsActiveTab]);
 }
 
+function hasFullColorSet(player, color) {
+    if (!color) return false;
+    const groupPositions = COLOR_GROUPS[color];
+    if (!groupPositions) return false;
+    return groupPositions.every(pos => {
+        const prop = gameState.board[String(pos)];
+        return prop && prop.owner === player.name;
+    });
+}
 function buildPropsBody(player) {
     const body = document.getElementById("props-body");
     body.innerHTML = "";
@@ -476,7 +609,9 @@ function buildPropsBody(player) {
             } else {
                 actionsHtml += `<button style="background:#c0392b" onclick="doMortgage('${player.name}',${prop.pos})">Mortgage</button>`;
                 if (prop.type === "property" && prop.houses < 5) {
-                    actionsHtml += `<button style="background:#2980B9"
+                    const ownsFullSet = hasFullColorSet(player, prop.color);
+                    const canBuy = ownsFullSet && player.money >= prop.house_cost;
+                    actionsHtml += `<button style="background:${canBuy?'#2980B9':'#444'}" ${canBuy?"":"disabled"}
                         onclick="doBuyHouse('${player.name}',${prop.pos})">+${prop.houses===4?"Hotel":"House"} $${prop.house_cost}</button>`;
                 }
             }
@@ -522,6 +657,127 @@ window.doBuyHouse = async function(playerName, pos) {
 
 // ── Save / Load ──────────────────────────────────────────────────────────────
 
+
+// ── Trade ────────────────────────────────────────────────────────────────────
+
+function openTradeModal() {
+    if (!gameState) return;
+    const humanPlayer = gameState.players.find(p => p.strategy === "Human" && !p.bankrupt);
+    if (!humanPlayer) {
+        alert("No human player in game");
+        return;
+    }
+    
+    // Populate recipient dropdown
+    const recipientSelect = document.getElementById("trade-recipient");
+    recipientSelect.innerHTML = '<option value="">Select player...</option>';
+    for (const p of gameState.players) {
+        if (p.name !== humanPlayer.name && !p.bankrupt) {
+            const opt = document.createElement("option");
+            opt.value = p.name;
+            opt.textContent = p.name;
+            recipientSelect.appendChild(opt);
+        }
+    }
+    
+    // Populate property lists
+    populateTradeProps("trade-offer-props", humanPlayer.properties);
+    
+    document.getElementById("trade-offer-cash").value = "0";
+    document.getElementById("trade-request-cash").value = "0";
+    document.getElementById("trade-request-props").innerHTML = "";
+    document.getElementById("trade-fairness").textContent = "";
+    document.getElementById("trade-overlay").classList.remove("hidden");
+}
+
+window.closeTradeModal = function() {
+    document.getElementById("trade-overlay").classList.add("hidden");
+};
+
+function populateTradeProps(containerId, properties) {
+    const container = document.getElementById(containerId);
+    container.innerHTML = "";
+    if (!properties || properties.length === 0) {
+        container.innerHTML = '<div style="padding: 8px; color: #666; font-size: 11px;">No properties</div>';
+        return;
+    }
+    for (const prop of properties) {
+        const item = document.createElement("div");
+        item.className = "trade-prop-item";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.value = prop.pos;
+        const colorHex = prop.color ? COLOR_HEX[prop.color] || "#888" : "#aaa";
+        const swatch = document.createElement("span");
+        swatch.className = "trade-prop-swatch";
+        swatch.style.backgroundColor = colorHex;
+        const label = document.createElement("span");
+        label.textContent = prop.name;
+        item.appendChild(cb);
+        item.appendChild(swatch);
+        item.appendChild(label);
+        item.addEventListener("click", (e) => {
+            if (e.target !== cb) cb.checked = !cb.checked;
+        });
+        container.appendChild(item);
+    }
+}
+
+window.proposeTrade = async function() {
+    if (!gameState) return;
+    const humanPlayer = gameState.players.find(p => p.strategy === "Human" && !p.bankrupt);
+    if (!humanPlayer) return;
+    
+    const recipientName = document.getElementById("trade-recipient").value;
+    if (!recipientName) {
+        alert("Please select a player to trade with");
+        return;
+    }
+    
+    const offeredPositions = Array.from(document.querySelectorAll("#trade-offer-props input:checked")).map(cb => parseInt(cb.value));
+    const offeredCash = parseInt(document.getElementById("trade-offer-cash").value) || 0;
+    const requestedPositions = Array.from(document.querySelectorAll("#trade-request-props input:checked")).map(cb => parseInt(cb.value));
+    const requestedCash = parseInt(document.getElementById("trade-request-cash").value) || 0;
+    
+    if (offeredPositions.length === 0 && offeredCash === 0 && requestedPositions.length === 0 && requestedCash === 0) {
+        alert("Trade must include at least one item");
+        return;
+    }
+    
+    const resp = await api("/propose_trade", {
+        session_id: sessionId,
+        proposer_name: humanPlayer.name,
+        recipient_name: recipientName,
+        offered_prop_positions: offeredPositions,
+        offered_cash: offeredCash,
+        requested_prop_positions: requestedPositions,
+        requested_cash: requestedCash
+    });
+    
+    if (resp.error) {
+        alert(resp.error);
+        return;
+    }
+    
+    if (resp.log) appendLog(resp.log);
+    gameState = resp.state;
+    refreshUI();
+    closeTradeModal();
+};
+
+document.getElementById("trade-recipient").addEventListener("change", function() {
+    if (!gameState) return;
+    const recipientName = this.value;
+    if (!recipientName) {
+        document.getElementById("trade-request-props").innerHTML = "";
+        return;
+    }
+    const recipient = gameState.players.find(p => p.name === recipientName);
+    if (recipient) {
+        populateTradeProps("trade-request-props", recipient.properties);
+    }
+});
+
 async function saveGame() {
     if (!sessionId) return;
     const resp = await api("/save", { session_id: sessionId });
@@ -551,3 +807,12 @@ async function loadGame(event) {
     refreshUI();
     event.target.value = "";
 }
+
+
+
+
+
+
+
+
+
