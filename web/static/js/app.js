@@ -596,6 +596,15 @@ function hasFullColorSet(player, color) {
         return prop && prop.owner === player.name;
     });
 }
+function canBuildOnProp(player, prop, groupProps) {
+    if (!prop.color || prop.type !== "property" || prop.mortgaged || prop.houses >= 5) return false;
+    if (!hasFullColorSet(player, prop.color)) return false;
+    if (groupProps.some(p => p.mortgaged)) return false;
+    // Even building: can only build if this prop has the lowest house count in the group
+    const minH = Math.min(...groupProps.map(p => p.houses));
+    return prop.houses === minH && player.money >= prop.house_cost;
+}
+
 function buildPropsBody(player) {
     const body = document.getElementById("props-body");
     body.innerHTML = "";
@@ -604,42 +613,68 @@ function buildPropsBody(player) {
         return;
     }
     const isHuman = player.strategy === "Human";
+
+    // Group properties by color
+    const grouped = {};
     for (const prop of player.properties) {
-        const row = document.createElement("div");
-        row.className = "prop-row";
-        const c = prop.color ? COLOR_HEX[prop.color] || "#888" : "#aaa";
+        const key = prop.color || "other";
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(prop);
+    }
 
-        let status, statusColor;
-        if (prop.mortgaged) { status = "MORTGAGED"; statusColor = "#FF7043"; }
-        else if (prop.houses === 5) { status = "Hotel"; statusColor = "#E74C3C"; }
-        else if (prop.houses > 0) { status = prop.houses + " House" + (prop.houses > 1 ? "s" : ""); statusColor = "#4CAF50"; }
-        else { status = "No houses"; statusColor = "#888"; }
+    // Sort groups by position of first property in each group
+    const sortedKeys = Object.keys(grouped).sort((a, b) => {
+        const aMin = Math.min(...grouped[a].map(p => p.pos));
+        const bMin = Math.min(...grouped[b].map(p => p.pos));
+        return aMin - bMin;
+    });
 
-        let actionsHtml = "";
-        if (isHuman) {
-            if (prop.mortgaged) {
-                const canUn = player.money >= prop.unmortgage_cost;
-                actionsHtml += `<button style="background:${canUn?'#27AE60':'#444'}" ${canUn?"":"disabled"}
-                    onclick="doUnmortgage('${player.name}',${prop.pos})">Unmortgage $${prop.unmortgage_cost}</button>`;
-            } else {
-                actionsHtml += `<button style="background:#c0392b" onclick="doMortgage('${player.name}',${prop.pos})">Mortgage</button>`;
-                if (prop.type === "property" && prop.houses < 5) {
-                    const ownsFullSet = hasFullColorSet(player, prop.color);
-                    const canBuy = ownsFullSet && player.money >= prop.house_cost;
-                    actionsHtml += `<button style="background:${canBuy?'#2980B9':'#444'}" ${canBuy?"":"disabled"}
-                        onclick="doBuyHouse('${player.name}',${prop.pos})">+${prop.houses===4?"Hotel":"House"} $${prop.house_cost}</button>`;
+    for (const colorKey of sortedKeys) {
+        const groupProps = grouped[colorKey];
+        const c = colorKey !== "other" ? COLOR_HEX[colorKey] || "#888" : "#aaa";
+        const colorLabel = colorKey.replace("_", " ");
+
+        // Group header
+        const header = document.createElement("div");
+        header.style.cssText = `display:flex;align-items:center;gap:8px;padding:8px 4px 4px;margin-top:8px;border-bottom:2px solid ${c};font-size:13px;font-weight:bold;color:${c};text-transform:capitalize;`;
+        header.innerHTML = `<div style="width:14px;height:14px;border-radius:3px;background:${c};flex-shrink:0;"></div>${colorLabel}`;
+        body.appendChild(header);
+
+        for (const prop of groupProps) {
+            const row = document.createElement("div");
+            row.className = "prop-row";
+
+            let status, statusColor;
+            if (prop.mortgaged) { status = "MORTGAGED"; statusColor = "#FF7043"; }
+            else if (prop.houses === 5) { status = "Hotel"; statusColor = "#E74C3C"; }
+            else if (prop.houses > 0) { status = prop.houses + " House" + (prop.houses > 1 ? "s" : ""); statusColor = "#4CAF50"; }
+            else { status = "No houses"; statusColor = "#888"; }
+
+            let actionsHtml = "";
+            if (isHuman) {
+                if (prop.mortgaged) {
+                    const canUn = player.money >= prop.unmortgage_cost;
+                    actionsHtml += `<button style="background:${canUn?'#27AE60':'#444'}" ${canUn?"":"disabled"}
+                        onclick="doUnmortgage('${player.name}',${prop.pos})">Unmortgage $${prop.unmortgage_cost}</button>`;
+                } else {
+                    actionsHtml += `<button style="background:#c0392b" onclick="doMortgage('${player.name}',${prop.pos})">Mortgage</button>`;
+                    if (prop.type === "property" && prop.houses < 5) {
+                        const canBuy = canBuildOnProp(player, prop, groupProps);
+                        actionsHtml += `<button style="background:${canBuy?'#2980B9':'#444'}" ${canBuy?"":"disabled"}
+                            onclick="doBuyHouse('${player.name}',${prop.pos})">+${prop.houses===4?"Hotel":"House"} $${prop.house_cost}</button>`;
+                    }
                 }
             }
-        }
 
-        row.innerHTML = `
-            <div class="color-swatch" style="background:${c}"></div>
-            <div class="prop-name">${prop.name}</div>
-            <div class="prop-status" style="color:${statusColor}">${status}</div>
-            <div class="prop-rent">$${prop.price}</div>
-            <div class="prop-actions">${actionsHtml}</div>
-        `;
-        body.appendChild(row);
+            row.innerHTML = `
+                <div class="color-swatch" style="background:${c}"></div>
+                <div class="prop-name">${prop.name}</div>
+                <div class="prop-status" style="color:${statusColor}">${status}</div>
+                <div class="prop-rent">$${prop.price}</div>
+                <div class="prop-actions">${actionsHtml}</div>
+            `;
+            body.appendChild(row);
+        }
     }
 }
 
