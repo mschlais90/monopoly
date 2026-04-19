@@ -4,6 +4,7 @@
 let sessionId = null;
 let gameState = null;
 let boardSpaces = [];
+let colorGroups = {};
 let autoRunning = false;
 let autoTimer = null;
 let lastDice = null;
@@ -45,6 +46,7 @@ async function api(path, body) {
 document.addEventListener("DOMContentLoaded", async () => {
     const data = await api("/constants");
     boardSpaces = data.board_spaces;
+    colorGroups = data.color_groups || {};
 
     buildSetupRows(2);
     document.querySelectorAll("#player-count-row .radio-btn").forEach(btn => {
@@ -587,7 +589,7 @@ function buildPropsTabs() {
 
 function hasFullColorSet(player, color) {
     if (!color) return false;
-    const groupPositions = COLOR_GROUPS[color];
+    const groupPositions = colorGroups[color];
     if (!groupPositions) return false;
     return groupPositions.every(pos => {
         const prop = gameState.board[String(pos)];
