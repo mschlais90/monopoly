@@ -185,7 +185,22 @@ function extractDice(log) {
 }
 
 async function handlePending(pending) {
-    if (pending.type === "buy") {
+    if (pending.type === "jail") {
+        const choice = await showModal(
+            "Jail Decision",
+            `<p><b>${pending.player}</b> is in jail (turn ${pending.jail_turns + 1}/3).</p>
+             <p>Your cash: $${pending.cash}</p>
+             <p>Pay <b>$50</b> to get out, or try to roll doubles?</p>`,
+            [{ text: "Pay $50", value: true, cls: "btn-green" },
+             { text: "Roll Doubles", value: false, cls: "btn-blue" }]
+        );
+        const resp = await api("/decide", { session_id: sessionId, type: "jail", choice });
+        if (resp.log) appendLog(resp.log);
+        gameState = resp.state;
+        if (resp.pending) {
+            await handlePending(resp.pending);
+        }
+    } else if (pending.type === "buy") {
         const choice = await showModal(
             "Buy Property?",
             `<p><b>${pending.property}</b> is available for <b>$${pending.price}</b></p>

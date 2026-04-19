@@ -208,11 +208,20 @@ def next_turn():
     engine.defer_human_prompts = True
     engine.pending_human_buys = []
     engine.pending_human_trades = []
+    engine.pending_human_jail = None
     engine.process_turn()
     engine.defer_human_prompts = False
 
     pending = None
-    if engine.pending_human_buys:
+    if engine.pending_human_jail:
+        player = engine.pending_human_jail
+        pending = {
+            "type": "jail",
+            "player": player.name,
+            "cash": player.money,
+            "jail_turns": player.jail_turns,
+        }
+    elif engine.pending_human_buys:
         player, prop = engine.pending_human_buys[0]
         pending = {
             "type": "buy",
@@ -255,7 +264,85 @@ def decide():
     choice = body.get("choice")
     extra_log = []
 
-    if dtype == "buy":
+    if dtype == "jail":
+        player = engine.pending_human_jail
+        engine.pending_human_jail = None
+        if player:
+            from game.constants import JAIL_FINE
+            from game.dice import roll
+            if choice:  # pay fine
+                engine._charge_bank(player, JAIL_FINE)
+                player.in_jail = False
+                player.jail_turns = 0
+                extra_log.append(f"  {player.name} paid ${JAIL_FINE} to get out of jail.")
+                # Now process the rest of their turn
+                engine.turn_log = []
+                engine.defer_human_prompts = True
+                engine.pending_human_buys = []
+                engine.pending_human_trades = []
+                # Roll and move
+                d1, d2 = roll()
+                total = d1 + d2
+                doubles = (d1 == d2)
+                extra_log.append(f"  Rolled {d1}+{d2}={total}" + (" (Doubles!)" if doubles else ""))
+                engine._move_player(player, total)
+                if not player.bankrupt:
+                    engine._apply_landing(player, total)
+                extra_log.extend(engine.turn_log)
+                engine.defer_human_prompts = False
+                # Check for pending buy
+                pending = None
+                if engine.pending_human_buys:
+                    pp, prop = engine.pending_human_buys[0]
+                    pending = {
+                        "type": "buy",
+                        "property": prop.name,
+                        "price": prop.price,
+                        "pos": prop.pos,
+                        "cash": pp.money,
+                    }
+                return jsonify({
+                    "state": _full_state(engine),
+                    "log": extra_log,
+                    "pending": pending,
+                })
+            else:  # roll for doubles
+                d1, d2 = roll()
+                doubles = (d1 == d2)
+                total = d1 + d2
+                extra_log.append(f"  Jail roll: {d1}+{d2}={total}")
+                if doubles:
+                    player.in_jail = False
+                    player.jail_turns = 0
+                    extra_log.append(f"  Doubles! {player.name} escapes jail and moves {total} spaces.")
+                    engine.turn_log = []
+                    engine.defer_human_prompts = True
+                    engine.pending_human_buys = []
+                    engine.pending_human_trades = []
+                    engine._move_player(player, total)
+                    if not player.bankrupt:
+                        engine._apply_landing(player, total)
+                    extra_log.extend(engine.turn_log)
+                    engine.defer_human_prompts = False
+                    pending = None
+                    if engine.pending_human_buys:
+                        pp, prop = engine.pending_human_buys[0]
+                        pending = {
+                            "type": "buy",
+                            "property": prop.name,
+                            "price": prop.price,
+                            "pos": prop.pos,
+                            "cash": pp.money,
+                        }
+                    return jsonify({
+                        "state": _full_state(engine),
+                        "log": extra_log,
+                        "pending": pending,
+                    })
+                else:
+                    player.jail_turns += 1
+                    extra_log.append(f"  No doubles. {player.name} stays in jail (turn {player.jail_turns}/3).")
+    elif dtype == "buy":
         if engine.pending_human_buys:
             player, prop = engine.pending_human_buys.pop(0)
             if choice and prop.owner is None and player.money >= prop.price:
@@ -277,6 +364,7 @@ def decide():
 
     engine.pending_human_buys = []
     engine.pending_human_trades = []
+    engine.pending_human_jail = None
 
     return jsonify({
         "state": _full_state(engine),

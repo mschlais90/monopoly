@@ -34,6 +34,7 @@ class GameEngine:
         self.defer_human_prompts = False   # set True by UI during animation
         self.pending_human_buys = []       # (player, prop) deferred buy decisions
         self.pending_human_trades = []     # TradeProposal deferred trade decisions
+        self.pending_human_jail = None     # player deferred jail decision
 
     @property
     def active_players(self):
@@ -124,6 +125,13 @@ class GameEngine:
             player.jail_turns = 0
             self._log(f"  {player.name} used a Get Out of Jail Free card!")
             return True, False, 0
+
+        # Defer jail decision for human players
+        is_human = "Human" in type(strategy).__name__
+        if self.defer_human_prompts and is_human and player.money >= JAIL_FINE:
+            self.pending_human_jail = player
+            self._log(f"  [Jail decision pending for {player.name}...]")
+            return False, False, 0
 
         # Pay fine?
         if player.money >= JAIL_FINE and strategy.should_pay_jail_fine(player, self):
