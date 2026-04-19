@@ -219,10 +219,13 @@ class GameEngine:
             prop = self.board_properties[target]
             self._log(f"  Moved to nearest Railroad: {prop.name}.")
             if prop.owner and prop.owner != player:
-                rr_cnt = len(prop.owner.owned_railroads())
-                rent = prop.get_rent(owner_railroads=rr_cnt, double_rr=True)
-                self._log(f"  Paying double RR rent: ${rent}.")
-                self._transfer(player, prop.owner, rent)
+                if prop.owner.in_jail:
+                    self._log(f"  {prop.owner.name} is in jail and cannot collect rent on {prop.name}.")
+                else:
+                    rr_cnt = len(prop.owner.owned_railroads())
+                    rent = prop.get_rent(owner_railroads=rr_cnt, double_rr=True)
+                    self._log(f"  Paying double RR rent: ${rent}.")
+                    self._transfer(player, prop.owner, rent)
             elif prop.owner is None:
                 self._offer_purchase(player, prop)
         elif action == "nearest_utility":
@@ -235,11 +238,14 @@ class GameEngine:
             prop = self.board_properties[target]
             self._log(f"  Moved to nearest Utility: {prop.name}.")
             if prop.owner and prop.owner != player:
-                d1, d2 = roll()
-                new_total = d1 + d2
-                rent = 10 * new_total
-                self._log(f"  Rolled {d1}+{d2}={new_total} for utility. Paying 10x=${rent}.")
-                self._transfer(player, prop.owner, rent)
+                if prop.owner.in_jail:
+                    self._log(f"  {prop.owner.name} is in jail and cannot collect rent on {prop.name}.")
+                else:
+                    d1, d2 = roll()
+                    new_total = d1 + d2
+                    rent = 10 * new_total
+                    self._log(f"  Rolled {d1}+{d2}={new_total} for utility. Paying 10x=${rent}.")
+                    self._transfer(player, prop.owner, rent)
             elif prop.owner is None:
                 self._offer_purchase(player, prop)
         elif action == "collect":
@@ -296,6 +302,9 @@ class GameEngine:
 
     def _collect_rent(self, payer, prop, dice_total):
         owner = prop.owner
+        if owner.in_jail:
+            self._log(f"  {owner.name} is in jail and cannot collect rent on {prop.name}.")
+            return
         is_mono = self._is_monopoly(owner, prop)
         rr_cnt = len(owner.owned_railroads())
         ut_cnt = len(owner.owned_utilities())
@@ -365,25 +374,52 @@ class GameEngine:
                 self._bankrupt(payer, receiver)
 
     def _raise_cash(self, player, amount_needed):
-        props_with_houses = sorted(
-            [p for p in player.properties if p.type == "property" and p.houses > 0],
-            key=lambda p: p.house_cost, reverse=True
+        # Step 1: Mortgage unimproved properties first (no houses on them)
+        unmortgaged = sorted(
+            [p for p in player.properties if not p.mortgaged and p.houses == 0],
+            key=lambda p: p.mortgage_value
         )
-        for prop in props_with_houses:
-            while prop.houses > 0 and player.money < amount_needed:
-                prop.houses -= 1
-                val = prop.house_cost // 2
-                player.receive(val)
-                self._log(f"  {player.name} sold house on {prop.name} for ${val}.")
+        for prop in unmortgaged:
+            if player.money >= amount_needed:
+                return True
+            prop.mortgaged = True
+            player.receive(prop.mortgage_value)
+            self._log(f"  {player.name} mortgaged {prop.name} for ${prop.mortgage_value}.")
 
         if player.money >= amount_needed:
             return True
 
-        unmortgaged = sorted(
-            [p for p in player.properties if not p.mortgaged],
+        # Step 2: Sell houses evenly across color groups (highest house count first)
+        has_houses = True
+        while player.money < amount_needed and has_houses:
+            has_houses = False
+            for color, positions in COLOR_GROUPS.items():
+                props = [self.board_properties[p] for p in positions
+                         if self.board_properties[p].owner == player]
+                if not props or max(p.houses for p in props) == 0:
+                    continue
+                has_houses = True
+                # Sell from the property with the most houses to keep them even
+                max_h = max(p.houses for p in props)
+                for prop in sorted(props, key=lambda p: p.houses, reverse=True):
+                    if prop.houses == max_h and prop.houses > 0:
+                        prop.houses -= 1
+                        val = prop.house_cost // 2
+                        player.receive(val)
+                        self._log(f"  {player.name} sold house on {prop.name} for ${val}.")
+                        if player.money >= amount_needed:
+                            return True
+                        break
+
+        if player.money >= amount_needed:
+            return True
+
+        # Step 3: Mortgage now-unimproved properties (after houses were sold)
+        newly_unmortgaged = sorted(
+            [p for p in player.properties if not p.mortgaged and p.houses == 0],
             key=lambda p: p.mortgage_value
         )
-        for prop in unmortgaged:
+        for prop in newly_unmortgaged:
             if player.money >= amount_needed:
                 break
             prop.mortgaged = True

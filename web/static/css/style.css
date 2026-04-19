@@ -341,3 +341,106 @@ body {
     margin-right: 6px;
     display: inline-block;
 }
+
+/* Trade modal grid (moved from inline style) */
+.trade-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+/* ── Mobile / Responsive ────────────────────────────────────────── */
+@media (max-width: 768px) {
+    /* Game screen: allow scrolling instead of fixed viewport */
+    #game-screen { height: auto; min-height: 100vh; }
+
+    /* Stack layout vertically */
+    .game-layout {
+        flex-direction: column;
+        overflow: auto;
+    }
+    .left-col, .right-col {
+        width: 100%;
+    }
+
+    /* Scale board canvas to fit screen width */
+    #board-canvas {
+        width: 100% !important;
+        height: auto !important;
+    }
+
+    /* Player panels: single column */
+    #player-panels {
+        grid-template-columns: 1fr;
+    }
+
+    /* Controls bar: center-wrap with bigger touch targets */
+    .controls-bar {
+        justify-content: center;
+        gap: 8px;
+        padding: 10px 8px;
+    }
+    .controls-bar .btn {
+        padding: 10px 14px;
+        font-size: 13px;
+    }
+    .btn-sm {
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    /* Top bar: wrap if needed */
+    .top-bar {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 10px;
+    }
+
+    /* Modals: fit on mobile screens */
+    .modal {
+        min-width: auto;
+        width: 92vw;
+        max-width: 92vw;
+        padding: 16px;
+        max-height: 85vh;
+    }
+    .modal-wide {
+        min-width: auto;
+        width: 95vw;
+        max-width: 95vw;
+    }
+
+    /* Property rows: wrap actions below */
+    .prop-row {
+        flex-wrap: wrap;
+    }
+    .prop-row .prop-actions {
+        width: 100%;
+        margin-top: 4px;
+        flex-wrap: wrap;
+    }
+    .prop-row .prop-actions button {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
+
+    /* Trade modal: single column */
+    .trade-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Log list: shorter on mobile to not push controls off screen */
+    .log-list { max-height: 200px; }
+
+    /* Log filters: wrap */
+    .log-filters {
+        flex-wrap: wrap;
+        gap: 6px;
+    }
+
+    /* Setup screen: smaller title */
+    #setup-screen h1 { font-size: 36px; }
+    #setup-screen h1 .sub { font-size: 16px; letter-spacing: 4px; }
+    #setup-screen { padding: 20px 12px; }
+    .setup-card { padding: 20px 16px; }
+}

@@ -14,12 +14,18 @@ const PLAYER_COLORS = ["#E74C3C", "#3498DB", "#2ECC71", "#F39C12"];
 
 function setupCanvas(canvas) {
     const dpr = window.devicePixelRatio || 1;
-    canvas.width = 640 * dpr;
-    canvas.height = 640 * dpr;
-    canvas.style.width = "640px";
-    canvas.style.height = "640px";
+    // Use container width on small screens, otherwise default 640
+    const container = canvas.parentElement;
+    const maxW = container ? container.clientWidth : 640;
+    const displaySize = Math.min(640, maxW);
+    canvas.width = displaySize * dpr;
+    canvas.height = displaySize * dpr;
+    canvas.style.width = displaySize + "px";
+    canvas.style.height = displaySize + "px";
     const ctx = canvas.getContext("2d");
-    ctx.scale(dpr, dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const scale = (displaySize / 640) * dpr;
+    ctx.scale(scale, scale);
     return ctx;
 }
 
@@ -69,6 +75,13 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("log-player-filter").addEventListener("change", renderLog);
     document.getElementById("log-type-filter").addEventListener("change", renderLog);
     document.getElementById("log-clear-btn").addEventListener("click", clearLog);
+
+    // Redraw board on resize/orientation change (for mobile)
+    let resizeTimer = null;
+    window.addEventListener("resize", () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => { if (gameState) refreshBoard(); }, 150);
+    });
 });
 
 function buildSetupRows(count) {
