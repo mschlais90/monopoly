@@ -177,11 +177,30 @@ def next_turn():
 
     if not isinstance(current_p.strategy, WebHumanStrategy):
         engine.turn_log = []
+        engine.defer_human_prompts = True
+        engine.pending_human_trades = []
         engine.process_turn()
+        engine.defer_human_prompts = False
+
+        pending = None
+        if engine.pending_human_trades:
+            from game.trade import trade_balance
+            proposal = engine.pending_human_trades[0]
+            recipient_net, proposer_net = trade_balance(proposal, engine)
+            pending = {
+                "type": "trade",
+                "proposer": proposal.proposer.name,
+                "recipient": proposal.recipient.name,
+                "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
+                "offered_cash": proposal.offered_cash,
+                "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
+                "requested_cash": proposal.requested_cash,
+                "recipient_net": recipient_net,
+            }
         return jsonify({
             "state": _full_state(engine),
             "log": engine.turn_log,
-            "pending": None,
+            "pending": pending,
         })
 
     # Human turn: use deferred prompts
@@ -469,6 +488,7 @@ def auto_turns():
     engine = sess["engine"]
     all_logs = []
 
+    pending = None
     for _ in range(count):
         if engine.game_over:
             break
@@ -477,8 +497,27 @@ def auto_turns():
         if isinstance(current_p.strategy, WebHumanStrategy):
             break
         engine.turn_log = []
+        engine.defer_human_prompts = True
+        engine.pending_human_trades = []
         engine.process_turn()
+        engine.defer_human_prompts = False
         all_logs.extend(engine.turn_log)
+
+        if engine.pending_human_trades:
+            from game.trade import trade_balance
+            proposal = engine.pending_human_trades[0]
+            recipient_net, proposer_net = trade_balance(proposal, engine)
+            pending = {
+                "type": "trade",
+                "proposer": proposal.proposer.name,
+                "recipient": proposal.recipient.name,
+                "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
+                "offered_cash": proposal.offered_cash,
+                "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
+                "requested_cash": proposal.requested_cash,
+                "recipient_net": recipient_net,
+            }
+            break
 
     human_next = False
     if not engine.game_over:
@@ -490,7 +529,7 @@ def auto_turns():
         "state": _full_state(engine),
         "log": all_logs,
         "human_next": human_next,
-        "pending": None,
+        "pending": pending,
     })
 
 

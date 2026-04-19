@@ -339,6 +339,9 @@ async function runAutoStep() {
     const doAnimate = settings.animate && speed <= 3 && count === 1;
 
     const afterAnim = async () => {
+        if (resp.pending) {
+            await handlePending(resp.pending);
+        }
         refreshUI();
         if (gameState.game_over) { stopAuto(); showWinner(); return; }
         if (resp.human_next && autoRunning) {
@@ -632,13 +635,6 @@ function buildPropsBody(player) {
     for (const colorKey of sortedKeys) {
         const groupProps = grouped[colorKey];
         const c = colorKey !== "other" ? COLOR_HEX[colorKey] || "#888" : "#aaa";
-        const colorLabel = colorKey.replace("_", " ");
-
-        // Group header
-        const header = document.createElement("div");
-        header.style.cssText = `display:flex;align-items:center;gap:8px;padding:8px 4px 4px;margin-top:8px;border-bottom:2px solid ${c};font-size:13px;font-weight:bold;color:${c};text-transform:capitalize;`;
-        header.innerHTML = `<div style="width:14px;height:14px;border-radius:3px;background:${c};flex-shrink:0;"></div>${colorLabel}`;
-        body.appendChild(header);
 
         for (const prop of groupProps) {
             const row = document.createElement("div");
@@ -751,25 +747,37 @@ function populateTradeProps(containerId, properties) {
         container.innerHTML = '<div style="padding: 8px; color: #666; font-size: 11px;">No properties</div>';
         return;
     }
+    // Group by color
+    const grouped = {};
     for (const prop of properties) {
-        const item = document.createElement("div");
-        item.className = "trade-prop-item";
-        const cb = document.createElement("input");
-        cb.type = "checkbox";
-        cb.value = prop.pos;
-        const colorHex = prop.color ? COLOR_HEX[prop.color] || "#888" : "#aaa";
-        const swatch = document.createElement("span");
-        swatch.className = "trade-prop-swatch";
-        swatch.style.backgroundColor = colorHex;
-        const label = document.createElement("span");
-        label.textContent = prop.name;
-        item.appendChild(cb);
-        item.appendChild(swatch);
-        item.appendChild(label);
-        item.addEventListener("click", (e) => {
-            if (e.target !== cb) cb.checked = !cb.checked;
-        });
-        container.appendChild(item);
+        const key = prop.color || "other";
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(prop);
+    }
+    const sortedKeys = Object.keys(grouped).sort((a, b) => {
+        return Math.min(...grouped[a].map(p => p.pos)) - Math.min(...grouped[b].map(p => p.pos));
+    });
+    for (const colorKey of sortedKeys) {
+        for (const prop of grouped[colorKey]) {
+            const item = document.createElement("div");
+            item.className = "trade-prop-item";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.value = prop.pos;
+            const colorHex = prop.color ? COLOR_HEX[prop.color] || "#888" : "#aaa";
+            const swatch = document.createElement("span");
+            swatch.className = "trade-prop-swatch";
+            swatch.style.backgroundColor = colorHex;
+            const label = document.createElement("span");
+            label.textContent = prop.name;
+            item.appendChild(cb);
+            item.appendChild(swatch);
+            item.appendChild(label);
+            item.addEventListener("click", (e) => {
+                if (e.target !== cb) cb.checked = !cb.checked;
+            });
+            container.appendChild(item);
+        }
     }
 }
 
