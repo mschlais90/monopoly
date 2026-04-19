@@ -130,7 +130,6 @@ class GameEngine:
         is_human = "Human" in type(strategy).__name__
         if self.defer_human_prompts and is_human and player.money >= JAIL_FINE:
             self.pending_human_jail = player
-            self._log(f"  [Jail decision pending for {player.name}...]")
             return False, False, 0
 
         # Pay fine?
@@ -578,7 +577,6 @@ class GameEngine:
         is_human = "Human" in type(recipient.strategy).__name__
         if self.defer_human_prompts and is_human:
             self.pending_human_trades.append(proposal)
-            self._log(f"  [Trade decision pending for {recipient.name}...]")
             return
 
         # Recipient evaluates
@@ -586,10 +584,6 @@ class GameEngine:
         if accepted:
             self.execute_trade(proposal)
         else:
-            op = ', '.join(p.name for p in proposal.offered_props) or f'${proposal.offered_cash}'
-            rp = ', '.join(p.name for p in proposal.requested_props) or f'${proposal.requested_cash}'
-            self._log(f"  [TRADE DECLINED] {recipient.name} declined "
-                      f"{player.name}'s offer of {op} for {rp}.")
             self._declined_trades[key] = self.turn_number
 
     def _check_game_over(self):

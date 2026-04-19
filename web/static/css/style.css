@@ -437,6 +437,9 @@ body {
         flex-wrap: wrap;
         gap: 6px;
     }
+    #log-unowned-btn {
+        padding: 6px 10px;
+    }
 
     /* Setup screen: smaller title */
     #setup-screen h1 { font-size: 36px; }

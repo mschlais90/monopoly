@@ -357,9 +357,7 @@ def decide():
             proposal = engine.pending_human_trades.pop(0)
             if choice:
                 engine.execute_trade(proposal)
-                extra_log.append(f"  [TRADE ACCEPTED] {proposal.recipient.name} accepted the trade from {proposal.proposer.name}.")
             else:
-                extra_log.append(f"  [TRADE DECLINED] {proposal.recipient.name} declined {proposal.proposer.name}'s offer.")
                 engine._declined_trades[engine._trade_key(proposal)] = engine.turn_number
 
     engine.pending_human_buys = []
@@ -420,9 +418,7 @@ def propose_trade():
     
     if accepted:
         engine.execute_trade(proposal)
-        extra_log.append(f"  [TRADE ACCEPTED] {recipient.name} accepted {proposer.name}'s trade offer!")
     else:
-        extra_log.append(f"  [TRADE DECLINED] {recipient.name} declined {proposer.name}'s trade offer.")
         engine._declined_trades[key] = engine.turn_number
     
     return jsonify({

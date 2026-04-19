@@ -77,6 +77,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("log-player-filter").addEventListener("change", renderLog);
     document.getElementById("log-type-filter").addEventListener("change", renderLog);
     document.getElementById("log-clear-btn").addEventListener("click", clearLog);
+    document.getElementById("log-unowned-btn").addEventListener("click", toggleUnownedInLog);
 
     // Redraw board on resize/orientation change (for mobile)
     let resizeTimer = null;
@@ -383,6 +384,7 @@ function refreshUI() {
     refreshPlayers();
     refreshUnowned();
     updatePlayerFilter();
+    if (showUnownedInLog) renderLog();
     document.getElementById("turn-label").textContent = "Turn: " + gameState.turn;
     const cp = gameState.players.find(p => p.name === gameState.current_player);
     const lbl = document.getElementById("current-player-label");
@@ -440,8 +442,11 @@ function refreshPlayers() {
             propsHtml = parts.join("<br>");
         }
         div.innerHTML = `
-            <div class="pp-name" style="color:${p.color}">${p.name} ${p.bankrupt ? "(BANKRUPT)" : ""}</div>
-            <div class="pp-stats">Cash: $${p.money.toLocaleString()} | Net Worth: $${p.net_worth.toLocaleString()} | Pos: ${p.position}${p.in_jail ? " (JAIL)" : ""}</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+                <div class="pp-name" style="color:${p.color}">${p.name} ${p.bankrupt ? "(BANKRUPT)" : ""}</div>
+                <div style="font-size:11px;color:#888;">${p.strategy}</div>
+            </div>
+            <div class="pp-stats">Cash: $${p.money.toLocaleString()} | Net Worth: $${p.net_worth.toLocaleString()}${p.in_jail ? " | JAIL" : ""}</div>
             <div class="pp-props">${propsHtml || "<i>No properties</i>"}</div>
         `;
         container.appendChild(div);
@@ -473,6 +478,7 @@ let currentTurnPlayer = null;
 function classifyLogType(msg) {
     const m = msg.toLowerCase();
     if (msg.startsWith("===")) return "Turn Header";
+    if (m.includes("[trade]") || m.includes("trade accepted")) return "Trade";
     if (m.includes("rolled") || m.includes("moves to") || m.includes("passed go") || m.includes("escaped jail")) return "Movement";
     if (m.includes("bought") || m.includes("passed on") || m.includes("unowned") || m.includes("buy")) return "Purchase";
     if (m.includes("rent") || m.includes("owes")) return "Rent";
@@ -516,12 +522,18 @@ function renderLog() {
     const el = document.getElementById("log-content");
     const playerFilter = document.getElementById("log-player-filter").value;
     const typeFilter = document.getElementById("log-type-filter").value;
-    
+
     el.innerHTML = "";
+
+    if (showUnownedInLog) {
+        el.innerHTML = buildUnownedHtml();
+        return;
+    }
+
     for (const msg of logMessages) {
         if (playerFilter !== "All" && msg.player !== playerFilter) continue;
         if (typeFilter !== "All" && msg.type !== typeFilter) continue;
-        
+
         const div = document.createElement("div");
         div.textContent = msg.text;
         div.className = pickLogClass(msg.text);
@@ -534,6 +546,39 @@ function clearLog() {
     logMessages = [];
     currentTurnPlayer = null;
     renderLog();
+}
+
+let showUnownedInLog = false;
+
+function toggleUnownedInLog() {
+    showUnownedInLog = !showUnownedInLog;
+    const btn = document.getElementById("log-unowned-btn");
+    btn.style.opacity = showUnownedInLog ? "1" : "0.5";
+    renderLog();
+}
+
+function buildUnownedHtml() {
+    if (!gameState || !boardSpaces) return "";
+    const grouped = {};
+    for (const sp of boardSpaces) {
+        if (!["property", "railroad", "utility"].includes(sp.type)) continue;
+        const bs = gameState.board[String(sp.pos)];
+        if (bs && bs.owner) continue;
+        const key = sp.color || "other";
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(sp);
+    }
+    const sortedKeys = Object.keys(grouped).sort((a, b) => {
+        return Math.min(...grouped[a].map(p => p.pos)) - Math.min(...grouped[b].map(p => p.pos));
+    });
+    let html = "";
+    for (const colorKey of sortedKeys) {
+        for (const sp of grouped[colorKey]) {
+            const c = sp.color ? COLOR_HEX[sp.color] || "#888" : "#aaa";
+            html += `<div class="unowned-item"><span class="swatch" style="background:${c}"></span>${sp.name} — $${sp.price}</div>`;
+        }
+    }
+    return html || '<div style="padding:8px;color:#666">All properties owned!</div>';
 }
 
 function updatePlayerFilter() {
