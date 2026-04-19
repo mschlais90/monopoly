@@ -285,14 +285,14 @@ def propose_trade():
     requested_positions = body.get("requested_prop_positions", [])
     requested_cash = body.get("requested_cash", 0)
     
-    proposer = next((p for p in engine.players if p.name == proposer_name), None)
-    recipient = next((p for p in engine.players if p.name == recipient_name), None)
-    
+    proposer = next((p for p in engine.all_players if p.name == proposer_name), None)
+    recipient = next((p for p in engine.all_players if p.name == recipient_name), None)
+
     if not proposer or not recipient:
         return jsonify({"error": "Invalid players"}), 400
-    
-    offered_props = [engine.board[pos] for pos in offered_positions if pos in range(40) and engine.board[pos].owner == proposer.name]
-    requested_props = [engine.board[pos] for pos in requested_positions if pos in range(40) and engine.board[pos].owner == recipient.name]
+
+    offered_props = [engine.board_properties[pos] for pos in offered_positions if pos in engine.board_properties and engine.board_properties[pos].owner == proposer]
+    requested_props = [engine.board_properties[pos] for pos in requested_positions if pos in engine.board_properties and engine.board_properties[pos].owner == recipient]
     
     proposal = TradeProposal(proposer, recipient, offered_props, offered_cash, requested_props, requested_cash)
     
