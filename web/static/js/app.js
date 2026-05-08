@@ -881,8 +881,12 @@ window.proposeTrade = async function() {
     
     if (resp.log) appendLog(resp.log);
     gameState = resp.state;
-    refreshUI();
     closeTradeModal();
+
+    if (resp.pending) {
+        await handlePending(resp.pending);
+    }
+    refreshUI();
 };
 
 document.getElementById("trade-recipient").addEventListener("change", function() {

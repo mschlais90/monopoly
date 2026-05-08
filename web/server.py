@@ -417,7 +417,28 @@ def propose_trade():
     extra_log = list(engine.turn_log)
     engine.turn_log = []
 
-    # Recipient evaluates
+    # If recipient is human, defer the decision to the browser
+    if isinstance(recipient.strategy, WebHumanStrategy):
+        from game.trade import trade_balance
+        engine.pending_human_trades = [proposal]
+        recipient_net, proposer_net = trade_balance(proposal, engine)
+        pending = {
+            "type": "trade",
+            "proposer": proposal.proposer.name,
+            "recipient": proposal.recipient.name,
+            "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
+            "offered_cash": proposal.offered_cash,
+            "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
+            "requested_cash": proposal.requested_cash,
+            "recipient_net": recipient_net,
+        }
+        return jsonify({
+            "state": _full_state(engine),
+            "log": extra_log,
+            "pending": pending,
+        })
+
+    # AI recipient evaluates
     accepted = recipient.strategy.evaluate_trade(recipient, proposal, engine)
 
     if accepted:
