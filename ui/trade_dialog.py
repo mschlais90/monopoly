@@ -322,4 +322,16 @@ class TradeDialog(tk.Toplevel):
         if accepted:
             self.engine.execute_trade(proposal)
             self.result = proposal
+            op_str = ", ".join(pr.name for pr in proposal.offered_props) or "—"
+            rp_str = ", ".join(pr.name for pr in proposal.requested_props) or "—"
+            messagebox.showinfo("Trade Accepted",
+                f"{r.name} accepted the trade!\n\n"
+                f"{p.name} gave: {op_str} + ${proposal.offered_cash:,}\n"
+                f"{r.name} gave: {rp_str} + ${proposal.requested_cash:,}",
+                parent=self)
             self.destroy()
+        else:
+            self.engine._declined_trades[
+                self.engine._trade_key(proposal)] = self.engine.turn_number
+            messagebox.showinfo("Trade Declined",
+                f"{r.name} declined the trade.", parent=self)
