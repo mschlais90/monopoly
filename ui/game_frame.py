@@ -206,6 +206,7 @@ class GameFrame(tk.Frame):
         self.engine.defer_human_prompts = True
         self.engine.pending_human_buys  = []
         self.engine.pending_human_trades = []
+        self.engine.pending_human_jail = None
         self.engine.process_turn()
         self.engine.defer_human_prompts = False
         self._update_dice()
@@ -255,6 +256,7 @@ class GameFrame(tk.Frame):
         self.engine.defer_human_prompts = True
         self.engine.pending_human_buys  = []
         self.engine.pending_human_trades = []
+        self.engine.pending_human_jail = None
         self.engine.process_turn()
         self.engine.defer_human_prompts = False
         self._update_dice()
@@ -430,6 +432,47 @@ class GameFrame(tk.Frame):
 
     def _process_pending_human_actions(self):
         new_log = []
+
+        # Jail decision
+        player = self.engine.pending_human_jail
+        if player:
+            self.engine.pending_human_jail = None
+            from game.constants import JAIL_FINE
+            from game.dice import roll
+            old = self.engine.turn_log[:]
+            self.engine.turn_log = []
+            pay = player.strategy.should_pay_jail_fine(player, self.engine)
+            if pay and player.money >= JAIL_FINE:
+                self.engine._charge_bank(player, JAIL_FINE)
+                player.in_jail = False
+                player.jail_turns = 0
+                self.engine._log(f"  {player.name} paid ${JAIL_FINE} to get out of jail.")
+                # Roll and move
+                d1, d2 = roll()
+                total = d1 + d2
+                doubles = (d1 == d2)
+                self.engine._log(f"  Rolled {d1}+{d2}={total}" + (" (Doubles!)" if doubles else ""))
+                self.engine._move_player(player, total)
+                if not player.bankrupt:
+                    self.engine._apply_landing(player, total)
+            else:
+                # Roll for doubles
+                d1, d2 = roll()
+                total = d1 + d2
+                doubles = (d1 == d2)
+                self.engine._log(f"  Jail roll: {d1}+{d2}={total}")
+                if doubles:
+                    player.in_jail = False
+                    player.jail_turns = 0
+                    self.engine._log(f"  Doubles! {player.name} escapes jail and moves {total} spaces.")
+                    self.engine._move_player(player, total)
+                    if not player.bankrupt:
+                        self.engine._apply_landing(player, total)
+                else:
+                    player.jail_turns += 1
+                    self.engine._log(f"  No doubles. {player.name} stays in jail (turn {player.jail_turns}/3).")
+            new_log.extend(self.engine.turn_log)
+            self.engine.turn_log = old
 
         # Buy decisions
         for player, prop in list(self.engine.pending_human_buys):

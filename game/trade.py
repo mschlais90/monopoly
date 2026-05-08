@@ -35,8 +35,9 @@ def strategic_value(prop, for_player, extra_props_receiving, engine, giving=Fals
         if giving:
             frac = len(currently_own) / len(group)
         else:
+            group_set = set(group)
             receiving_positions = {p.pos for p in extra_props_receiving
-                                   if p.type == "property"}
+                                   if p.type == "property" and p.pos in group_set}
             will_own_after = currently_own | receiving_positions
             frac = len(will_own_after) / len(group)
         if frac >= 1.0:
@@ -51,7 +52,8 @@ def strategic_value(prop, for_player, extra_props_receiving, engine, giving=Fals
         if giving:
             after = min(owned + 1, 4)  # count including this prop
         else:
-            extra = sum(1 for p in extra_props_receiving if p.type == "railroad")
+            extra = sum(1 for p in extra_props_receiving
+                        if p.type == "railroad" and p is not prop)
             after = min(owned + extra + 1, 4)
         mult = {1: 1.0, 2: 1.5, 3: 2.1, 4: 3.0}[after]
         return base * mult
@@ -61,7 +63,8 @@ def strategic_value(prop, for_player, extra_props_receiving, engine, giving=Fals
         if giving:
             after = owned + 1  # count including this prop
         else:
-            extra = sum(1 for p in extra_props_receiving if p.type == "utility")
+            extra = sum(1 for p in extra_props_receiving
+                        if p.type == "utility" and p is not prop)
             after = owned + extra + 1
         return base * (1.8 if after >= 2 else 1.0)
     return base

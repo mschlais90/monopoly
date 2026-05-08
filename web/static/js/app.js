@@ -478,7 +478,8 @@ let currentTurnPlayer = null;
 function classifyLogType(msg) {
     const m = msg.toLowerCase();
     if (msg.startsWith("===")) return "Turn Header";
-    if (m.includes("[trade]") || m.includes("trade accepted")) return "Trade";
+    if (m.includes("[trade proposed]")) return "Other";
+    if (m.includes("[trade]")) return "Trade";
     if (m.includes("rolled") || m.includes("moves to") || m.includes("passed go") || m.includes("escaped jail")) return "Movement";
     if (m.includes("bought") || m.includes("passed on") || m.includes("unowned") || m.includes("buy")) return "Purchase";
     if (m.includes("rent") || m.includes("owes")) return "Rent";
@@ -497,7 +498,8 @@ function pickLogClass(msg) {
     if (m.includes("jail")) return "log-jail";
     if (m.includes("chance") || m.includes("chest")) return "log-card";
     if (m.includes("built") || m.includes("house") || m.includes("hotel")) return "log-build";
-    if (m.includes("trade")) return "log-trade";
+    if (m.includes("[trade]")) return "log-trade";
+    if (m.includes("[trade proposed]")) return "log-trade";
     if (m.includes("bankrupt")) return "log-bankrupt";
     return "";
 }

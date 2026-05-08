@@ -126,6 +126,14 @@ class GameEngine:
             self._log(f"  {player.name} used a Get Out of Jail Free card!")
             return True, False, 0
 
+        # Forced on 3rd turn (must check before deferring to human)
+        if player.jail_turns >= 2:
+            self._charge_bank(player, JAIL_FINE)
+            player.in_jail = False
+            player.jail_turns = 0
+            self._log(f"  {player.name} forced to pay ${JAIL_FINE} after 3 turns in jail.")
+            return True, False, 0
+
         # Defer jail decision for human players
         is_human = "Human" in type(strategy).__name__
         if self.defer_human_prompts and is_human and player.money >= JAIL_FINE:
@@ -138,14 +146,6 @@ class GameEngine:
             player.in_jail = False
             player.jail_turns = 0
             self._log(f"  {player.name} paid ${JAIL_FINE} to get out of jail.")
-            return True, False, 0
-
-        # Forced on 3rd turn
-        if player.jail_turns >= 2:
-            self._charge_bank(player, JAIL_FINE)
-            player.in_jail = False
-            player.jail_turns = 0
-            self._log(f"  {player.name} forced to pay ${JAIL_FINE} after 3 turns in jail.")
             return True, False, 0
 
         # Roll for doubles
@@ -524,6 +524,15 @@ class GameEngine:
         group = COLOR_GROUPS.get(prop.color, [])
         return all(self.board_properties[p].owner == player for p in group)
 
+    def _log_trade_proposal(self, proposal):
+        p, r = proposal.proposer, proposal.recipient
+        op = ', '.join(pr.name for pr in proposal.offered_props) or 'nothing'
+        rp = ', '.join(pr.name for pr in proposal.requested_props) or 'nothing'
+        self._log(f"  [TRADE PROPOSED] {p.name} offers {op}"
+                  f"{f'+${proposal.offered_cash}' if proposal.offered_cash else ''}"
+                  f" to {r.name} for {rp}"
+                  f"{f'+${proposal.requested_cash}' if proposal.requested_cash else ''}")
+
     def execute_trade(self, proposal):
         """Execute a confirmed trade between two players."""
         p, r = proposal.proposer, proposal.recipient
@@ -572,6 +581,8 @@ class GameEngine:
         cooldown = 10 * len(self.active_players)
         if self.turn_number - self._declined_trades.get(key, -cooldown) < cooldown:
             return
+
+        self._log_trade_proposal(proposal)
 
         # Defer to UI if animation is pending and recipient is human
         is_human = "Human" in type(recipient.strategy).__name__

@@ -412,15 +412,21 @@ def propose_trade():
                 "log": []
             })
     
+    # Log the proposal
+    engine._log_trade_proposal(proposal)
+    extra_log = list(engine.turn_log)
+    engine.turn_log = []
+
     # Recipient evaluates
     accepted = recipient.strategy.evaluate_trade(recipient, proposal, engine)
-    extra_log = []
-    
+
     if accepted:
         engine.execute_trade(proposal)
+        extra_log.extend(engine.turn_log)
+        engine.turn_log = []
     else:
         engine._declined_trades[key] = engine.turn_number
-    
+
     return jsonify({
         "state": _full_state(engine),
         "log": extra_log,
