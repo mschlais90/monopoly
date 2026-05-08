@@ -776,24 +776,35 @@ function openTradeModal() {
         return;
     }
     
-    // Populate recipient dropdown
+    // Populate recipient dropdown — default to next non-bankrupt player
     const recipientSelect = document.getElementById("trade-recipient");
-    recipientSelect.innerHTML = '<option value="">Select player...</option>';
-    for (const p of gameState.players) {
+    recipientSelect.innerHTML = "";
+    const humanIdx = gameState.players.indexOf(humanPlayer);
+    const otherPlayers = [];
+    for (let i = 1; i < gameState.players.length; i++) {
+        const p = gameState.players[(humanIdx + i) % gameState.players.length];
         if (p.name !== humanPlayer.name && !p.bankrupt) {
-            const opt = document.createElement("option");
-            opt.value = p.name;
-            opt.textContent = p.name;
-            recipientSelect.appendChild(opt);
+            otherPlayers.push(p);
         }
     }
-    
+    for (const p of otherPlayers) {
+        const opt = document.createElement("option");
+        opt.value = p.name;
+        opt.textContent = p.name;
+        recipientSelect.appendChild(opt);
+    }
+
     // Populate property lists
     populateTradeProps("trade-offer-props", humanPlayer.properties);
-    
+    const defaultRecipient = otherPlayers.length > 0 ? gameState.players.find(p => p.name === otherPlayers[0].name) : null;
+
     document.getElementById("trade-offer-cash").value = "0";
     document.getElementById("trade-request-cash").value = "0";
-    document.getElementById("trade-request-props").innerHTML = "";
+    if (defaultRecipient) {
+        populateTradeProps("trade-request-props", defaultRecipient.properties);
+    } else {
+        document.getElementById("trade-request-props").innerHTML = "";
+    }
     document.getElementById("trade-fairness").textContent = "";
     document.getElementById("trade-overlay").classList.remove("hidden");
 }
@@ -849,10 +860,6 @@ window.proposeTrade = async function() {
     if (!humanPlayer) return;
     
     const recipientName = document.getElementById("trade-recipient").value;
-    if (!recipientName) {
-        alert("Please select a player to trade with");
-        return;
-    }
     
     const offeredPositions = Array.from(document.querySelectorAll("#trade-offer-props input:checked")).map(cb => parseInt(cb.value));
     const offeredCash = parseInt(document.getElementById("trade-offer-cash").value) || 0;
