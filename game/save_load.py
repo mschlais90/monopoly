@@ -70,13 +70,21 @@ def save_game(engine, filepath):
             "houses":    prop.houses,
         }
 
+    # Convert _declined_trades keys (tuples with frozensets) to JSON-safe strings
+    declined = {}
+    for key, turn in engine._declined_trades.items():
+        proposer, recipient, offered_set, requested_set = key
+        json_key = json.dumps([proposer, recipient,
+                               sorted(offered_set), sorted(requested_set)])
+        declined[json_key] = turn
+
     data = {
         "version":           1,
         "turn_number":       engine.turn_number,
         "current_idx":       engine.current_idx,
         "game_over":         engine.game_over,
         "free_parking_pot":  engine.free_parking_pot,
-        "declined_trades":   engine._declined_trades,
+        "declined_trades":   declined,
         "players":           players_data,
         "board":             board_data,
         "chance_deck":       {"cards": engine.chance_deck.cards,
@@ -152,7 +160,12 @@ def load_engine(filepath):
     engine.current_idx      = data["current_idx"]
     engine.game_over        = data["game_over"]
     engine.free_parking_pot = data["free_parking_pot"]
-    engine._declined_trades = {k: v for k, v in data["declined_trades"].items()}
+    # Restore _declined_trades keys from JSON strings back to tuples with frozensets
+    engine._declined_trades = {}
+    for json_key, turn in data["declined_trades"].items():
+        proposer, recipient, offered, requested = json.loads(json_key)
+        key = (proposer, recipient, frozenset(offered), frozenset(requested))
+        engine._declined_trades[key] = turn
 
     # ── Restore deck state ────────────────────────────────────────────────
     cd = data["chance_deck"]
