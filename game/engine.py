@@ -134,9 +134,11 @@ class GameEngine:
             self._log(f"  {player.name} forced to pay ${JAIL_FINE} after 3 turns in jail.")
             return True, False, 0
 
-        # Defer jail decision for human players
+        # Defer jail decision for human players. A player with a Get Out of Jail
+        # Free card still gets a say even if they cannot afford the fine.
         is_human = "Human" in type(strategy).__name__
-        if self.defer_human_prompts and is_human and player.money >= JAIL_FINE:
+        if (self.defer_human_prompts and is_human
+                and (player.money >= JAIL_FINE or player.get_out_of_jail_free > 0)):
             self.pending_human_jail = player
             return False, False, 0
 

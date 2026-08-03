@@ -187,13 +187,21 @@ function extractDice(log) {
 
 async function handlePending(pending) {
     if (pending.type === "jail") {
+        const goojf = pending.goojf || 0;
+        const buttons = [];
+        if (goojf > 0) {
+            buttons.push({ text: "Use Jail Free Card", value: "goojf", cls: "btn-green" });
+        }
+        buttons.push({ text: "Pay $50", value: true, cls: goojf > 0 ? "btn-blue" : "btn-green" });
+        buttons.push({ text: "Roll Doubles", value: false, cls: "btn-blue" });
+
         const choice = await showModal(
             "Jail Decision",
             `<p><b>${pending.player}</b> is in jail (turn ${pending.jail_turns + 1}/3).</p>
              <p>Your cash: $${pending.cash}</p>
+             ${goojf > 0 ? `<p>You hold <b>${goojf}</b> Get Out of Jail Free card${goojf > 1 ? "s" : ""}.</p>` : ""}
              <p>Pay <b>$50</b> to get out, or try to roll doubles?</p>`,
-            [{ text: "Pay $50", value: true, cls: "btn-green" },
-             { text: "Roll Doubles", value: false, cls: "btn-blue" }]
+            buttons
         );
         const resp = await api("/decide", { session_id: sessionId, type: "jail", choice });
         if (resp.log) appendLog(resp.log);
@@ -202,16 +210,21 @@ async function handlePending(pending) {
             await handlePending(resp.pending);
         }
     } else if (pending.type === "buy") {
+        const more = (pending.remaining || 1) - 1;
         const choice = await showModal(
             "Buy Property?",
             `<p><b>${pending.property}</b> is available for <b>$${pending.price}</b></p>
-             <p>Your cash: $${pending.cash}</p>`,
+             <p>Your cash: $${pending.cash}</p>
+             ${more > 0 ? `<p style="color:#888">${more} more purchase decision${more > 1 ? "s" : ""} this turn.</p>` : ""}`,
             [{ text: "Buy", value: true, cls: "btn-green" },
              { text: "Pass", value: false, cls: "btn-grey" }]
         );
         const resp = await api("/decide", { session_id: sessionId, type: "buy", choice });
         if (resp.log) appendLog(resp.log);
         gameState = resp.state;
+        if (resp.pending) {
+            await handlePending(resp.pending);
+        }
     } else if (pending.type === "trade") {
         const offeredProps = pending.offered_props.map(p => p.name).join(", ") || "nothing";
         const requestedProps = pending.requested_props.map(p => p.name).join(", ") || "nothing";
@@ -233,6 +246,9 @@ async function handlePending(pending) {
         const resp = await api("/decide", { session_id: sessionId, type: "trade", choice });
         if (resp.log) appendLog(resp.log);
         gameState = resp.state;
+        if (resp.pending) {
+            await handlePending(resp.pending);
+        }
     }
 }
 

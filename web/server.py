@@ -67,6 +67,78 @@ sessions = {}
 app = Flask(__name__, static_folder="static")
 
 
+def _current_player(engine):
+    """The player whose turn is actually next.
+
+    `engine.current_idx` can point at a bankrupt player — nothing rewinds it when
+    someone busts, and `process_turn` only skips bankrupt players once it runs.
+    Resolving the index the same way here keeps the server from mistaking a human
+    turn for an AI turn (which would silently drop their jail/buy prompts).
+    """
+    n = len(engine.all_players)
+    idx = engine.current_idx % n
+    for _ in range(n):
+        if not engine.all_players[idx].bankrupt:
+            break
+        idx = (idx + 1) % n
+    return engine.all_players[idx]
+
+
+def _trade_pending(engine, proposal):
+    from game.trade import trade_balance
+    recipient_net, _ = trade_balance(proposal, engine)
+    return {
+        "type": "trade",
+        "proposer": proposal.proposer.name,
+        "recipient": proposal.recipient.name,
+        "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
+        "offered_cash": proposal.offered_cash,
+        "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
+        "requested_cash": proposal.requested_cash,
+        "recipient_net": recipient_net,
+    }
+
+
+def _pending_payload(engine):
+    """Next decision the browser owes us, or None.
+
+    Buys are queued (rolling doubles can land on two unowned properties in one
+    turn), so this is called again after each answer until the queue drains.
+    """
+    if engine.pending_human_jail:
+        player = engine.pending_human_jail
+        return {
+            "type": "jail",
+            "player": player.name,
+            "cash": player.money,
+            "jail_turns": player.jail_turns,
+            "goojf": player.get_out_of_jail_free,
+        }
+
+    # Drop queued buys for properties that were taken in the meantime.
+    while engine.pending_human_buys and engine.pending_human_buys[0][1].owner is not None:
+        engine.pending_human_buys.pop(0)
+    if engine.pending_human_buys:
+        player, prop = engine.pending_human_buys[0]
+        return {
+            "type": "buy",
+            "property": prop.name,
+            "price": prop.price,
+            "pos": prop.pos,
+            "cash": player.money,
+            "remaining": len(engine.pending_human_buys),
+        }
+
+    while engine.pending_human_trades and (
+            engine.pending_human_trades[0].recipient.bankrupt
+            or engine.pending_human_trades[0].proposer.bankrupt):
+        engine.pending_human_trades.pop(0)
+    if engine.pending_human_trades:
+        return _trade_pending(engine, engine.pending_human_trades[0])
+
+    return None
+
+
 @app.route("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
@@ -150,11 +222,9 @@ def _full_state(engine):
             "price": prop.price,
         }
 
-    idx = engine.current_idx % len(engine.all_players)
-    current_p = engine.all_players[idx]
     return {
         "turn": engine.turn_number,
-        "current_player": current_p.name,
+        "current_player": _current_player(engine).name,
         "game_over": engine.game_over,
         "winner": engine.winner.name if engine.winner else None,
         "free_parking_pot": engine.free_parking_pot,
@@ -173,37 +243,8 @@ def next_turn():
     if engine.game_over:
         return jsonify({"state": _full_state(engine), "log": [], "pending": None})
 
-    current_p = engine.all_players[engine.current_idx % len(engine.all_players)]
-
-    if not isinstance(current_p.strategy, WebHumanStrategy):
-        engine.turn_log = []
-        engine.defer_human_prompts = True
-        engine.pending_human_trades = []
-        engine.process_turn()
-        engine.defer_human_prompts = False
-
-        pending = None
-        if engine.pending_human_trades:
-            from game.trade import trade_balance
-            proposal = engine.pending_human_trades[0]
-            recipient_net, proposer_net = trade_balance(proposal, engine)
-            pending = {
-                "type": "trade",
-                "proposer": proposal.proposer.name,
-                "recipient": proposal.recipient.name,
-                "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
-                "offered_cash": proposal.offered_cash,
-                "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
-                "requested_cash": proposal.requested_cash,
-                "recipient_net": recipient_net,
-            }
-        return jsonify({
-            "state": _full_state(engine),
-            "log": engine.turn_log,
-            "pending": pending,
-        })
-
-    # Human turn: use deferred prompts
+    # Deferred prompts are armed unconditionally: `process_turn` skips bankrupt
+    # players, so even a turn that looks like an AI's can land on the human.
     engine.turn_log = []
     engine.defer_human_prompts = True
     engine.pending_human_buys = []
@@ -212,43 +253,10 @@ def next_turn():
     engine.process_turn()
     engine.defer_human_prompts = False
 
-    pending = None
-    if engine.pending_human_jail:
-        player = engine.pending_human_jail
-        pending = {
-            "type": "jail",
-            "player": player.name,
-            "cash": player.money,
-            "jail_turns": player.jail_turns,
-        }
-    elif engine.pending_human_buys:
-        player, prop = engine.pending_human_buys[0]
-        pending = {
-            "type": "buy",
-            "property": prop.name,
-            "price": prop.price,
-            "pos": prop.pos,
-            "cash": player.money,
-        }
-    elif engine.pending_human_trades:
-        from game.trade import trade_balance
-        proposal = engine.pending_human_trades[0]
-        recipient_net, proposer_net = trade_balance(proposal, engine)
-        pending = {
-            "type": "trade",
-            "proposer": proposal.proposer.name,
-            "recipient": proposal.recipient.name,
-            "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
-            "offered_cash": proposal.offered_cash,
-            "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
-            "requested_cash": proposal.requested_cash,
-            "recipient_net": recipient_net,
-        }
-
     return jsonify({
         "state": _full_state(engine),
         "log": engine.turn_log,
-        "pending": pending,
+        "pending": _pending_payload(engine),
     })
 
 
@@ -264,48 +272,42 @@ def decide():
     choice = body.get("choice")
     extra_log = []
 
+    def leave_jail_and_move(player):
+        """Roll, move, and queue whatever the landing asks the player to decide."""
+        from game.dice import roll
+        d1, d2 = roll()
+        total = d1 + d2
+        extra_log.append(f"  Rolled {d1}+{d2}={total}" + (" (Doubles!)" if d1 == d2 else ""))
+        engine.turn_log = []
+        engine.defer_human_prompts = True
+        engine.pending_human_buys = []
+        engine.pending_human_trades = []
+        engine._move_player(player, total)
+        if not player.bankrupt:
+            engine._apply_landing(player, total)
+        engine.defer_human_prompts = False
+        extra_log.extend(engine.turn_log)
+        engine.turn_log = []
+
     if dtype == "jail":
         player = engine.pending_human_jail
         engine.pending_human_jail = None
         if player:
             from game.constants import JAIL_FINE
             from game.dice import roll
-            if choice:  # pay fine
-                engine._charge_bank(player, JAIL_FINE)
+            if choice == "goojf" and player.get_out_of_jail_free > 0:
+                player.get_out_of_jail_free -= 1
                 player.in_jail = False
                 player.jail_turns = 0
-                extra_log.append(f"  {player.name} paid ${JAIL_FINE} to get out of jail.")
-                # Now process the rest of their turn
-                engine.turn_log = []
-                engine.defer_human_prompts = True
-                engine.pending_human_buys = []
-                engine.pending_human_trades = []
-                # Roll and move
-                d1, d2 = roll()
-                total = d1 + d2
-                doubles = (d1 == d2)
-                extra_log.append(f"  Rolled {d1}+{d2}={total}" + (" (Doubles!)" if doubles else ""))
-                engine._move_player(player, total)
+                extra_log.append(f"  {player.name} used a Get Out of Jail Free card!")
+                leave_jail_and_move(player)
+            elif choice and choice != "goojf":  # pay fine
+                engine._charge_bank(player, JAIL_FINE)
                 if not player.bankrupt:
-                    engine._apply_landing(player, total)
-                extra_log.extend(engine.turn_log)
-                engine.defer_human_prompts = False
-                # Check for pending buy
-                pending = None
-                if engine.pending_human_buys:
-                    pp, prop = engine.pending_human_buys[0]
-                    pending = {
-                        "type": "buy",
-                        "property": prop.name,
-                        "price": prop.price,
-                        "pos": prop.pos,
-                        "cash": pp.money,
-                    }
-                return jsonify({
-                    "state": _full_state(engine),
-                    "log": extra_log,
-                    "pending": pending,
-                })
+                    player.in_jail = False
+                    player.jail_turns = 0
+                    extra_log.append(f"  {player.name} paid ${JAIL_FINE} to get out of jail.")
+                    leave_jail_and_move(player)
             else:  # roll for doubles
                 d1, d2 = roll()
                 doubles = (d1 == d2)
@@ -322,23 +324,9 @@ def decide():
                     engine._move_player(player, total)
                     if not player.bankrupt:
                         engine._apply_landing(player, total)
-                    extra_log.extend(engine.turn_log)
                     engine.defer_human_prompts = False
-                    pending = None
-                    if engine.pending_human_buys:
-                        pp, prop = engine.pending_human_buys[0]
-                        pending = {
-                            "type": "buy",
-                            "property": prop.name,
-                            "price": prop.price,
-                            "pos": prop.pos,
-                            "cash": pp.money,
-                        }
-                    return jsonify({
-                        "state": _full_state(engine),
-                        "log": extra_log,
-                        "pending": pending,
-                    })
+                    extra_log.extend(engine.turn_log)
+                    engine.turn_log = []
                 else:
                     player.jail_turns += 1
                     extra_log.append(f"  No doubles. {player.name} stays in jail (turn {player.jail_turns}/3).")
@@ -357,17 +345,17 @@ def decide():
             proposal = engine.pending_human_trades.pop(0)
             if choice:
                 engine.execute_trade(proposal)
+                extra_log.extend(engine.turn_log)
+                engine.turn_log = []
             else:
                 engine._declined_trades[engine._trade_key(proposal)] = engine.turn_number
 
-    engine.pending_human_buys = []
-    engine.pending_human_trades = []
-    engine.pending_human_jail = None
-
+    # A single turn can queue several decisions (doubles landing on two unowned
+    # properties, say), so hand back the next one instead of discarding the rest.
     return jsonify({
         "state": _full_state(engine),
         "log": extra_log,
-        "pending": None,
+        "pending": _pending_payload(engine),
     })
 
 
@@ -419,23 +407,11 @@ def propose_trade():
 
     # If recipient is human, defer the decision to the browser
     if isinstance(recipient.strategy, WebHumanStrategy):
-        from game.trade import trade_balance
         engine.pending_human_trades = [proposal]
-        recipient_net, proposer_net = trade_balance(proposal, engine)
-        pending = {
-            "type": "trade",
-            "proposer": proposal.proposer.name,
-            "recipient": proposal.recipient.name,
-            "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
-            "offered_cash": proposal.offered_cash,
-            "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
-            "requested_cash": proposal.requested_cash,
-            "recipient_net": recipient_net,
-        }
         return jsonify({
             "state": _full_state(engine),
             "log": extra_log,
-            "pending": pending,
+            "pending": _trade_pending(engine, proposal),
         })
 
     # AI recipient evaluates
@@ -603,38 +579,24 @@ def auto_turns():
     for _ in range(count):
         if engine.game_over:
             break
-        idx = engine.current_idx % len(engine.all_players)
-        current_p = engine.all_players[idx]
-        if isinstance(current_p.strategy, WebHumanStrategy):
+        if isinstance(_current_player(engine).strategy, WebHumanStrategy):
             break
         engine.turn_log = []
         engine.defer_human_prompts = True
+        engine.pending_human_buys = []
         engine.pending_human_trades = []
+        engine.pending_human_jail = None
         engine.process_turn()
         engine.defer_human_prompts = False
         all_logs.extend(engine.turn_log)
 
-        if engine.pending_human_trades:
-            from game.trade import trade_balance
-            proposal = engine.pending_human_trades[0]
-            recipient_net, proposer_net = trade_balance(proposal, engine)
-            pending = {
-                "type": "trade",
-                "proposer": proposal.proposer.name,
-                "recipient": proposal.recipient.name,
-                "offered_props": [{"name": p.name, "price": p.price} for p in proposal.offered_props],
-                "offered_cash": proposal.offered_cash,
-                "requested_props": [{"name": p.name, "price": p.price} for p in proposal.requested_props],
-                "requested_cash": proposal.requested_cash,
-                "recipient_net": recipient_net,
-            }
+        pending = _pending_payload(engine)
+        if pending:
             break
 
     human_next = False
     if not engine.game_over:
-        idx = engine.current_idx % len(engine.all_players)
-        next_p = engine.all_players[idx]
-        human_next = isinstance(next_p.strategy, WebHumanStrategy)
+        human_next = isinstance(_current_player(engine).strategy, WebHumanStrategy)
 
     return jsonify({
         "state": _full_state(engine),
